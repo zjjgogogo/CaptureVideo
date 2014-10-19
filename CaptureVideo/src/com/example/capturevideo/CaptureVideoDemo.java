@@ -1,48 +1,32 @@
 package com.example.capturevideo;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.PixelFormat;
+import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Handler.Callback;
 import android.os.Message;
+import android.util.Log;
+import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
-import android.view.View.OnClickListener;
+import android.view.View.OnTouchListener;
 import android.view.Window;
 import android.view.WindowManager;
-import android.widget.Button;
 import android.widget.Toast;
-
-/**
- * 
- * class name：TestBasicVideo<BR>
- * 
- * class description：一个简单的录制视频例子<BR>
- * 
- * PS：实现基本的录制保存文件<BR>
- * 
- * 
- * 
- * @version 1.00 2011/09/21
- * 
- * @author CODYY)peijiangping
- */
 
 public class CaptureVideoDemo extends Activity implements
 		SurfaceHolder.Callback {
 
-	final int MAX_TIME = 8;
-
-	final int ADD_TIME = 1;
-
-	final int CD_TIME = 1000;
+	final int MAXTIME = 10000;
 
 	int currentTime = 0;
 
-	private Button start;// 开始录制按钮
+	private View start;// 开始录制按钮
 
 	private CaptureVideoController mCaptureVideoController;
 
@@ -53,6 +37,8 @@ public class CaptureVideoDemo extends Activity implements
 	// 想偷偷录视频的同学可以考虑别的办法。。嗯需要实现这个接口的Callback接口
 
 	private SurfaceHolder surfaceHolder;
+
+	private CaptureVideoProgressView mCaptureVideoProgressView;
 
 	public void onCreate(Bundle savedInstanceState) {
 
@@ -82,35 +68,94 @@ public class CaptureVideoDemo extends Activity implements
 
 	private void init() {
 
-		start = (Button) this.findViewById(R.id.start);
+		start = this.findViewById(R.id.start);
 
-		start.setOnClickListener(new TestVideoListener());
+		// start.setOnClickListener(new TestVideoListener());
+
+		start.setOnTouchListener(mOnTouchListener);
+
+		mCaptureVideoProgressView = (CaptureVideoProgressView) findViewById(R.id.progress);
 
 		surfaceview = (SurfaceView) this.findViewById(R.id.surfaceview);
 
 		SurfaceHolder holder = surfaceview.getHolder();// 取得holder
 
 		holder.addCallback(this); // holder加入回调接口
-		 
 
 	}
 
-	class TestVideoListener implements OnClickListener {
+	TimeThread mThread = new TimeThread();
+	OnTouchListener mOnTouchListener = new OnTouchListener() {
 
 		@Override
-		public void onClick(View v) {
+		public boolean onTouch(View v, MotionEvent event) {
 
-			if (v == start) {
-
-				if (!mCaptureVideoController.isCapturing) {
+			switch (event.getAction()) {
+			case MotionEvent.ACTION_DOWN:
+				Log.e("onTouch", "ACTION_DOWN");
+				if (!mCaptureVideoController.isCapturing
+						&& currentTime < MAXTIME) {
 					mCaptureVideoController.startCapture(surfaceHolder
 							.getSurface());
-					mHandler.sendEmptyMessageDelayed(0, CD_TIME);
+				}
+				mThread = new TimeThread();
+				mThread.start();
+				break;
+			case MotionEvent.ACTION_MOVE:
+				Log.e("onTouch", "ACTION_MOVE");
+				break;
+			case MotionEvent.ACTION_UP:
+				Log.e("onTouch", "ACTION_UP");
+
+				mThread.isRun = false;
+				mThread = null;
+
+				if (mCaptureVideoController != null) {
+					mCaptureVideoController.stopCapture();
+				}
+				mCaptureVideoController.cleanInvalidFile();
+
+				break;
+			}
+
+			return true;
+		}
+	};
+
+	class TimeThread extends Thread {
+
+		boolean isRun = true;
+
+		@Override
+		public void run() {
+			while (currentTime < MAXTIME) {
+
+				if (!isRun) {
+					break;
+				}
+				try {
+					Thread.sleep(100);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+
+				if (!isRun) {
+					break;
+				}
+
+				currentTime += 100;
+				mCaptureVideoProgressView.setProgress((float) currentTime
+						/ MAXTIME);
+
+				if (!isRun) {
+					break;
 				}
 			}
 
+			if (currentTime == MAXTIME) {
+				mHandler.sendEmptyMessage(0);
+			}
 		}
-
 	}
 
 	Handler mHandler = new Handler(new Callback() {
@@ -118,16 +163,17 @@ public class CaptureVideoDemo extends Activity implements
 		@Override
 		public boolean handleMessage(Message arg0) {
 
-			currentTime += ADD_TIME;
-			if (currentTime < MAX_TIME) {
-				mHandler.sendEmptyMessageDelayed(0, CD_TIME);
-			} else {
-				if (mCaptureVideoController != null) {
-					mCaptureVideoController.stopCapture();
-				}
-				Toast.makeText(CaptureVideoDemo.this, "Finished",
-						Toast.LENGTH_SHORT).show();
+			if (mCaptureVideoController != null) {
+				mCaptureVideoController.stopCapture();
 			}
+			Toast.makeText(CaptureVideoDemo.this, "Finished",
+					Toast.LENGTH_SHORT).show();
+
+			Intent mIntent = new Intent(CaptureVideoDemo.this,
+					VideoActivity.class);
+			startActivity(mIntent);
+
+			finish();
 
 			return false;
 		}
@@ -141,7 +187,6 @@ public class CaptureVideoDemo extends Activity implements
 		// 将holder，这个holder为开始在oncreat里面取得的holder，将它赋给surfaceHolder
 
 		surfaceHolder = holder;
-		
 
 	}
 
@@ -153,7 +198,7 @@ public class CaptureVideoDemo extends Activity implements
 		surfaceHolder = holder;
 
 		mCaptureVideoController.previewInit(holder);
-		
+
 		mCaptureVideoController.previewStart();
 
 	}
@@ -162,6 +207,8 @@ public class CaptureVideoDemo extends Activity implements
 	public void surfaceDestroyed(SurfaceHolder holder) {
 
 		// surfaceDestroyed的时候同时对象设置为null
+
+		mCaptureVideoController.closeCamera();
 
 		surfaceview = null;
 
